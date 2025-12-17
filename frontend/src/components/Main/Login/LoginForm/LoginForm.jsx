@@ -34,45 +34,56 @@ const LoginForm = () => {
       const { ok, data } = await loginUser(formData.email, formData.password);
 
       if (ok) {
-        // "Semáforo Rojo" - Detecta si es usuario nuevo
-        if(data.action === "FORCE_PASSWORD_CHANGE") {
-          // Redirigimos al empleado para cambiar contraseña pasando el email
-          navigate("/change-password", {
-            state: { email: data.user.email }
+        // VERIFICAR SI NECESITA CAMBIAR CONTRASEÑA (PRIMERO)
+        if (data.action === "FORCE_PASSWORD_CHANGE") {
+          console.log("🔄 Usuario con contraseña temporal detectado");
+          
+          // Guardar token temporal si viene
+          if (data.token) {
+            localStorage.setItem("token", data.token);
+          }
+          
+          // Navegar a cambiar contraseña con los datos necesarios
+          navigate("/change/password", {  // ← Corregido: guion, no slash
+            state: { 
+              email: data.user?.email || formData.email,
+              tempPassword: formData.password,
+              isTemporaryPassword: true
+            }
           });
-          return; // Evita guardar el token
+          return;  // ← IMPORTANTE: return para no continuar
         }
 
+        // ✅ LOGIN NORMAL (si no necesita cambiar contraseña)
+        console.log("✅ Login exitoso");
+        
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
 
-        // Redirigir según el rol
-        if (data.user.rol === "admin" || data.user.rol === "manager") {
-          navigate("/dashboard", { replace: true });
-        } else {
-          navigate("/dashboard", { replace: true });
-        }
+        // Navegar al dashboard
+        navigate("/dashboard", { replace: true });
+
       } else {
         setError(data.message || "Error en el login");
       }
     } catch (err) {
       setError("Error inesperado. Intenta de nuevo.");
-      console.log(err);
+      console.error("Error en login:", err);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <section className="login-container">
+    <section className="loginContainer">
       
-      <div className="login-header">
+      <div className="loginHeader">
         <h1>Iniciar Sesión</h1>
         <p>Ingresa tus credenciales para continuar</p>
       </div>
 
-      <form className="login-form">
-        {error && <div className="login-error">{error}</div>}
+      <form className="loginForm">
+        {error && <div className="loginError">{error}</div>}
         
         <label htmlFor="email">Email</label>
         <input
@@ -97,7 +108,7 @@ const LoginForm = () => {
         />
 
         <button 
-            className="btn-primary" 
+            className="loginButton" 
             onClick={handleSubmit} 
             disabled={loading}
         >
@@ -105,12 +116,12 @@ const LoginForm = () => {
         </button>
 
         <button
-          className="btn-text"
-          onClick={() => navigate("/forgot/password")}
+          className="forgotButton"
+          onClick={() => navigate("/forgot-password")}
           disabled={loading}
           type="button"
         >
-          ¿Olvidaste mi contraseña?
+          Olvidé mi contraseña
         </button>
       </form>
     </section>

@@ -1,27 +1,53 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import axios from "axios";
+import { changePassword, changePasswordFirstTime } from "../../../service/users.service";
 
 const ChangePassword = () => {
   const navigate = useNavigate();
-  const location = useLocation(); // Leemos lo que nos manda el login
+  const location = useLocation();
+
   const emailFromLogin = location.state?.email;
+  const tempPassword = location.state?.tempPassword;
+  const isTemporaryPassword = location.state?.isTemporaryPassword;
 
   const [formData, setFormData] = useState({
-    currentPassword: "",
+    currentPassword: tempPassword || "",
     newPassword: "",
     confirmPassword: "",
   });
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  const [isFirstTimeChange, setIsFirstTimeChange] = useState(false);
 
-  // Si no hay email, LLevamos a login
   useEffect(() => {
-    if(!emailFromLogin) {
-      navigate("/login");
+    // CASO 1: Viene del login con contraseña temporal
+    if (isTemporaryPassword && emailFromLogin) {
+      setUserEmail(emailFromLogin);
+      setIsFirstTimeChange(true);
+      return;
     }
-  }, [ emailFromLogin, navigate]);
+
+    // CASO 2: Usuario ya autenticado quiere cambiar contraseña
+    const token = localStorage.getItem("token");
+    const user = localStorage.getItem("user");
+
+    if (!token || !user) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    try {
+      const userData = JSON.parse(user);
+      setUserEmail(userData.email);
+      setIsFirstTimeChange(false);
+    } catch (error) {
+      console.error("Error al obtener email:", error);
+      navigate("/login", { replace: true });
+    }
+  }, [emailFromLogin, isTemporaryPassword, navigate]);
 
   const handleChange = (e) => {
     setFormData({
@@ -38,124 +64,209 @@ const ChangePassword = () => {
     setSuccess("");
     setLoading(true);
 
-    if (!formData.currentPassword || !formData.newPassword || !formData.confirmPassword) {
+    const { currentPassword, newPassword, confirmPassword } = formData;
+
+    // Validaciones
+    if (!currentPassword || !newPassword || !confirmPassword) {
       setError("Todos los campos son requeridos");
       setLoading(false);
       return;
     }
 
-    if (formData.newPassword !== formData.confirmPassword) {
+    if (newPassword !== confirmPassword) {
       setError("Las contraseñas nuevas no coinciden");
       setLoading(false);
       return;
     }
 
-    if (formData.newPassword.length < 6) {
+    if (newPassword.length < 6) {
       setError("La nueva contraseña debe tener al menos 6 caracteres");
       setLoading(false);
       return;
     }
 
+    if (currentPassword === newPassword) {
+      setError("La nueva contraseña debe ser diferente a la actual");
+      setLoading(false);
+      return;
+    }
+
     try {
-      const urlChangePassword = `${import.meta.env.VITE_API_URL}/user/change-password`;
-      const response = await axios.put(urlChangePassword, {
-        email: emailFromLogin,
-        defaultPassword: formData.currentPassword,
-        newPassword: formData.newPassword
-      })
+      let ok, data;
 
-      // const { ok, data } = await changePassword(
-      //   formData.currentPassword,
-      //   formData.newPassword
-      // );
+      // Llamar al servicio correcto según el caso
+      if (isFirstTimeChange) {
+        // Primer cambio: sin token
+        ({ ok, data } = await changePasswordFirstTime(
+          userEmail,
+          currentPassword,
+          newPassword
+        ));
+      } else {
+        // Cambio normal: con token
+        ({ ok, data } = await changePassword(currentPassword, newPassword));
+      }
 
-      // if (response.ok) {
-      //   setSuccess(response.data.message);
-      //   setTimeout(() => {
-      //     navigate("/login");
-      //   }, 2000);
-      // } else {
-      //   setError(response.data.message || "Error al cambiar la contraseña");
-      // }
-      setSuccess(response.data.message);
+      if (ok) {
+        setSuccess(
+          data.message || data.msg || "Contraseña actualizada correctamente"
+        );
 
-      setTimeout(() => {
-        navigate("/login");
-      }, 2000);
+        // Limpiar formulario
+        setFormData({
+          currentPassword: "",
+          newPassword: "",
+          confirmPassword: "",
+        });
+
+        // Redirigir según el caso
+        setTimeout(() => {
+          if (isFirstTimeChange) {
+            // Primer cambio: limpiar todo y volver al login
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+            navigate("/login", {
+              replace: true,
+              state: {
+                message:
+                  "✅ Contraseña actualizada. Inicia sesión con tu nueva contraseña.",
+              },
+            });
+          } else {
+            // Cambio normal: volver al dashboard
+            navigate("/dashboard", {
+              replace: true,
+            });
+          }
+        }, 2000);
+      } else {
+        setError(data.message || data.msg || "Error al cambiar la contraseña");
+      }
     } catch (err) {
-      setError("Error inesperado. Intenta de nuevo.");
-      console.log(err);
+      console.error("Error al cambiar contraseña:", err);
+      const errorMsg =
+        err.response?.data?.message ||
+        err.response?.data?.msg ||
+        err.message ||
+        "Error al cambiar la contraseña. Verifica tu contraseña actual.";
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleCancel = () => {
+    // Si es primer cambio, NO puede cancelar
+    if (isFirstTimeChange) {
+      setError("⚠️ Debes cambiar tu contraseña temporal antes de continuar");
+      return;
+    }
+
+    // Cambio normal: puede volver al dashboard
+    navigate("/dashboard");
+  };
+
+  // ✅ Loading mientras obtiene el email
+  if (!userEmail) {
+    return (
+      <section>
+        <article>
+          <p>Cargando...</p>
+        </article>
+      </section>
+    );
+  }
+
+  // ✅ AQUÍ VA EL FORMULARIO PRINCIPAL (cuando YA hay userEmail)
   return (
     <section>
       <article>
-        <h1>Cambiar Contraseña</h1>
-        <p>Actualiza tu contraseña por una más segura</p>
+        <h1>
+          {isFirstTimeChange ? "⚠️ Cambio Obligatorio de Contraseña" : "Cambiar Contraseña"}
+        </h1>
+        <p>
+          {isFirstTimeChange
+            ? "Por seguridad, debes cambiar tu contraseña temporal"
+            : "Actualiza tu contraseña por una más segura"}
+        </p>
+        {userEmail && <p className="user-email">Usuario: {userEmail}</p>}
       </article>
 
       <article>
         {error && (
-          <div>
-            <p>{error}</p>
+          <div className="error-message">
+            <p>❌ {error}</p>
           </div>
         )}
 
         {success && (
-          <div>
-            <p>{success}</p>
+          <div className="success-message">
+            <p>✅ {success}</p>
           </div>
         )}
 
-        <article>
-          <label htmlFor="currentPassword">Contraseña Actual</label>
-          <input
-            type="password"
-            id="currentPassword"
-            name="currentPassword"
-            value={formData.currentPassword}
-            onChange={handleChange}
-            placeholder="Introduce tu contraseña actual"
-            disabled={loading}
-          />
-        </article>
+        <form onSubmit={handleSubmit}>
+          <article>
+            <label htmlFor="currentPassword">
+              {isFirstTimeChange ? "Contraseña Temporal" : "Contraseña Actual"}
+            </label>
+            <input
+              type="password"
+              id="currentPassword"
+              name="currentPassword"
+              value={formData.currentPassword}
+              onChange={handleChange}
+              placeholder={
+                isFirstTimeChange
+                  ? "Contraseña temporal recibida"
+                  : "Introduce tu contraseña actual"
+              }
+              disabled={loading || !!tempPassword}
+              required
+            />
+          </article>
 
-        <article>
-          <label htmlFor="newPassword">Nueva Contraseña</label>
-          <input
-            type="password"
-            id="newPassword"
-            name="newPassword"
-            value={formData.newPassword}
-            onChange={handleChange}
-            placeholder="Introduce tu nueva contraseña"
-            disabled={loading}
-          />
-        </article>
+          <article>
+            <label htmlFor="newPassword">Nueva Contraseña</label>
+            <input
+              type="password"
+              id="newPassword"
+              name="newPassword"
+              value={formData.newPassword}
+              onChange={handleChange}
+              placeholder="Introduce tu nueva contraseña (mínimo 6 caracteres)"
+              disabled={loading}
+              required
+              minLength={6}
+            />
+          </article>
 
-        <article>
-          <label htmlFor="confirmPassword">Confirmar Nueva Contraseña</label>
-          <input
-            type="password"
-            id="confirmPassword"
-            name="confirmPassword"
-            value={formData.confirmPassword}
-            onChange={handleChange}
-            placeholder="Confirma tu nueva contraseña"
-            disabled={loading}
-          />
-        </article>
+          <article>
+            <label htmlFor="confirmPassword">Confirmar Nueva Contraseña</label>
+            <input
+              type="password"
+              id="confirmPassword"
+              name="confirmPassword"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              placeholder="Confirma tu nueva contraseña"
+              disabled={loading}
+              required
+            />
+          </article>
 
-        <button onClick={handleSubmit} disabled={loading}>
-          {loading ? "Cambiando..." : "Cambiar Contraseña"}
-        </button>
+          <button type="submit" disabled={loading}>
+            {loading ? "Cambiando..." : "Cambiar Contraseña"}
+          </button>
 
-        <button onClick={() => navigate("/login")} disabled={loading}>
-          Cancelar
-        </button>
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={loading || isFirstTimeChange}
+          >
+            {isFirstTimeChange ? "No puedes cancelar" : "Cancelar"}
+          </button>
+        </form>
       </article>
     </section>
   );

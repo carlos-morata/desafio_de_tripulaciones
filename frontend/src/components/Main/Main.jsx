@@ -7,6 +7,10 @@ import Dashboard from './Dashboards/Dashboards'
 import ChangePassword from './ChangePassword/ChangePassword'
 import UsersList from './UsersList/UsersList'
 import Chat from "./Chat/Chat";
+import GuiaChatbotSQL from "./Guia/Guia";
+import ForgotPassword from "./ForgotPassword/ForgotPassword";
+
+
 
 const Main = () => {
   return <main>
@@ -16,8 +20,10 @@ const Main = () => {
         <Route path="/signup" element={<SignUp />} />
         <Route path="/chat" element ={<Chat />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/change-password" element={<ChangePassword />} />
+        <Route path="/change/password" element={<ChangePassword />} />
         <Route path="/users/list" element={<UsersList />} />
+        <Route path="/guia" element={<GuiaChatbotSQL />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
 
       </Routes>
     </main>;
